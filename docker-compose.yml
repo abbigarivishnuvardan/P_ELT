@@ -1,0 +1,223 @@
+services:
+
+  # ============================================================
+  # SOURCE POSTGRES DATABASE
+  # ============================================================
+  source_postgres:
+    image: postgres:latest
+    ports:
+      - "5433:5432"
+    networks:
+      - elt_network
+    environment:
+      POSTGRES_DB: source_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2002
+    volumes:
+      - ./source_db_init/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+
+  # ============================================================
+  # DESTINATION POSTGRES DATABASE
+  # ============================================================
+  destination_postgres:
+    image: postgres:latest
+    ports:
+      - "5434:5432"
+    networks:
+      - elt_network
+    depends_on:
+      - source_postgres
+    environment:
+      POSTGRES_DB: destination_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2002
+
+
+  # ============================================================
+  # AIRFLOW METADATA DATABASE
+  # ============================================================
+  postgres:
+    image: postgres:latest
+    networks:
+      - elt_network
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+
+
+  # ============================================================
+  # AIRFLOW DATABASE INITIALIZATION
+  # ============================================================
+  init-airflow:
+    image: apache/airflow:latest
+    depends_on:
+      - postgres
+    networks:
+      - elt_network
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    command: airflow db migrate
+
+
+  # ============================================================
+  # AIRFLOW WEBSERVER / API SERVER
+  # ============================================================
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    user: root
+
+    depends_on:
+      postgres:
+        condition: service_started
+      init-airflow:
+        condition: service_completed_successfully
+
+    networks:
+      - elt_network
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./elt_script:/opt/airflow/elt_script
+      - ./postgres_transformations:/opt/dbt
+      - ~/.dbt:/root/.dbt
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      LOAD_EX: "n"
+      EXECUTOR: Local
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+      AIRFLOW_CONN_DESTINATION_POSTGRES: postgresql://postgres:2002@destination_postgres:5432/destination_db
+
+      AIRFLOW__CORE__FERNET_KEY: plIipb9RU3-3wJ1UNaAtqVNJrqFEks1-dGbJM34EW7U=
+
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: airflow:admin
+
+      AIRFLOW__API__SECRET_KEY: secret
+
+    ports:
+      - "8080:8080"
+
+    command: api-server
+
+
+  # ============================================================
+  # AIRFLOW SCHEDULER
+  # ============================================================
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    user: root
+
+    depends_on:
+      postgres:
+        condition: service_started
+      init-airflow:
+        condition: service_completed_successfully
+
+    networks:
+      - elt_network
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./elt_script:/opt/airflow/elt_script
+      - ./postgres_transformations:/opt/dbt
+      - ~/.dbt:/root/.dbt
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      LOAD_EX: "n"
+      EXECUTOR: Local
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+      AIRFLOW_CONN_DESTINATION_POSTGRES: postgresql://postgres:2002@destination_postgres:5432/destination_db
+
+      AIRFLOW__CORE__FERNET_KEY: plIipb9RU3-3wJ1UNaAtqVNJrqFEks1-dGbJM34EW7U=
+
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: airflow:admin
+
+      AIRFLOW__API__SECRET_KEY: secret
+
+    command: scheduler
+
+
+  # ============================================================
+  # AIRFLOW DAG PROCESSOR
+  # ============================================================
+  dag-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    user: root
+
+    depends_on:
+      postgres:
+        condition: service_started
+      init-airflow:
+        condition: service_completed_successfully
+
+    networks:
+      - elt_network
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./elt_script:/opt/airflow/elt_script
+      - ./postgres_transformations:/opt/dbt
+      - ~/.dbt:/root/.dbt
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      LOAD_EX: "n"
+      EXECUTOR: Local
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+      AIRFLOW_CONN_DESTINATION_POSTGRES: postgresql://postgres:2002@destination_postgres:5432/destination_db
+
+      AIRFLOW__CORE__FERNET_KEY: plIipb9RU3-3wJ1UNaAtqVNJrqFEks1-dGbJM34EW7U=
+
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: airflow:admin
+
+      AIRFLOW__API__SECRET_KEY: secret
+
+    command: dag-processor
+
+
+# ============================================================
+# NETWORK
+# ============================================================
+networks:
+  elt_network:
+    driver: bridge
+
+
+# ============================================================
+# VOLUMES
+# ============================================================
+volumes:
+  destination_db_data:

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Airflow
+logs/
+airflow/logs/
+
+# Database data
+postgres_data/
+destination_db_data/
+source_db_data/
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.log
+*.tmp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
